@@ -47,10 +47,16 @@ import (
 func main() {
 	cfg := config.Load()
 
-	repo, err := repository.NewSQLiteRepository("qrcode.db")
+	db, err := repository.NewSQLiteRepository("qrcode.db")
 	if err != nil {
 		log.Fatalf("failed to init database: %v", err)
 	}
+	cache, err := repository.NewRedisRepository(cfg.RedisAddr, cfg.RedisTTL)
+	if err != nil {
+		log.Fatalf("failed to connect to Redis: %v", err)
+	}
+	repo := repository.NewCachedRepository(cache, db)
+
 	tokenGen := token.NewGenerator()
 	svc := service.NewService(repo, tokenGen, cfg.BaseURL)
 	h := handler.NewHandler(svc, cfg.BaseURL)
