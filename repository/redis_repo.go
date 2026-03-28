@@ -13,45 +13,43 @@ import (
 
 type redisRepo struct {
 	client *redis.Client
-	ttl    time.Duration // 快取存活時間
-	ctx    context.Context
+	ttl    time.Duration
 }
 
-func NewRedisRepository(addr string, ttl time.Duration) (Repository, error) {
+func NewRedisRepository(addr string, ttl time.Duration, poolSize int, minIdleConns int, readTimeout time.Duration, writeTimeout time.Duration, dialTimeout time.Duration) (Repository, error) {
 	client := redis.NewClient(&redis.Options{
-		Addr: addr, // 例如 "localhost:6379"
+		Addr:         addr,
+		PoolSize:     poolSize,
+		MinIdleConns: minIdleConns,
+		ReadTimeout:  readTimeout,
+		WriteTimeout: writeTimeout,
+		DialTimeout:  dialTimeout,
 	})
 
-	// 測試連線
-	ctx := context.Background()
-	if err := client.Ping(ctx).Err(); err != nil {
+	if err := client.Ping(context.Background()).Err(); err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
 	return &redisRepo{
 		client: client,
 		ttl:    ttl,
-		ctx:    ctx,
 	}, nil
 }
 
-func (r *redisRepo) Create(qr *model.QRCode) error {
+func (r *redisRepo) Create(ctx context.Context, qr *model.QRCode) error {
 	data, err := json.Marshal(qr)
 	if err != nil {
 		return fmt.Errorf("failed to marshal: %w", err)
 	}
 
-	// SET key value EX ttl
-	// key 用 "qr:" 前綴，避免跟其他資料衝突
 	key := "qr:" + qr.QRToken
-	return r.client.Set(r.ctx, key, data, r.ttl).Err()
+	return r.client.Set(ctx, key, data, r.ttl).Err()
 }
 
-func (r *redisRepo) GetByToken(qrToken string) (*model.QRCode, error) {
+func (r *redisRepo) GetByToken(ctx context.Context, qrToken string) (*model.QRCode, error) {
 	key := "qr:" + qrToken
-	data, err := r.client.Get(r.ctx, key).Bytes()
+	data, err := r.client.Get(ctx, key).Bytes()
 	if err == redis.Nil {
-		// key 不存在 = cache miss
 		return nil, fmt.Errorf("qr code not found: %s", qrToken)
 	}
 	if err != nil {
@@ -65,26 +63,24 @@ func (r *redisRepo) GetByToken(qrToken string) (*model.QRCode, error) {
 	return &qr, nil
 }
 
-func (r *redisRepo) Delete(qrToken string) error {
+func (r *redisRepo) Delete(ctx context.Context, qrToken string) error {
 	key := "qr:" + qrToken
-	return r.client.Del(r.ctx, key).Err()
+	return r.client.Del(ctx, key).Err()
 }
 
-func (r *redisRepo) TokenExists(qrToken string) (bool, error) {
+func (r *redisRepo) TokenExists(ctx context.Context, qrToken string) (bool, error) {
 	key := "qr:" + qrToken
-	count, err := r.client.Exists(r.ctx, key).Result()
+	count, err := r.client.Exists(ctx, key).Result()
 	if err != nil {
 		return false, fmt.Errorf("redis exists failed: %w", err)
 	}
 	return count > 0, nil
 }
 
-func (r *redisRepo) Update(qrToken string, url string) error {
-	// cache 不做 update，交給 cached_repo 做 invalidation（刪除）
-	return r.Delete(qrToken)
+func (r *redisRepo) Update(ctx context.Context, qrToken string, url string) error {
+	return r.Delete(ctx, qrToken)
 }
 
-// 不適合用 cache 做，直接回傳空
-func (r *redisRepo) GetByUserID(userID string) ([]*model.QRCode, error) {
+func (r *redisRepo) GetByUserID(ctx context.Context, userID string) ([]*model.QRCode, error) {
 	return nil, nil
 }

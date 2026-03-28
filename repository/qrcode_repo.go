@@ -2,6 +2,8 @@ package repository
 
 // 跟資料存取交互
 import (
+	"context"
+
 	"qrcode-gen/model"
 )
 
@@ -16,12 +18,10 @@ Delete     		DELETE /v1/qr_code/{token}	刪除
 TokenExists		（建立時檢查碰撞用）		  確認 token 是否已存在
 */
 type Repository interface {
-	Create(qr *model.QRCode) error
-	GetByToken(qrToken string) (*model.QRCode, error)
-	GetByUserID(userID string) ([]*model.QRCode, error)
-	Update(qrToken string, url string) error
-	Delete(qrToken string) error
-	TokenExists(qrToken string) (bool, error)
+	Create(ctx context.Context, qr *model.QRCode) error
+	GetByToken(ctx context.Context, qrToken string) (*model.QRCode, error)
+	GetByUserID(ctx context.Context, userID string) ([]*model.QRCode, error)
+	Update(ctx context.Context, qrToken string, url string) error
+	Delete(ctx context.Context, qrToken string) error
+	TokenExists(ctx context.Context, qrToken string) (bool, error)
 }
-
-// --- In-Memory 實作 ---

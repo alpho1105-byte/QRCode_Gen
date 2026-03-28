@@ -1,59 +1,55 @@
 package service
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"net/url"
 	"time"
 
-	//local
 	"qrcode-gen/model"
 	"qrcode-gen/repository"
 	"qrcode-gen/token"
 )
 
-const (
-	maxURLLength = 20 // 設計文件：ASCII，最長 20 字元
-	maxRetries   = 5  // Token 碰撞時的最大重試次數
-)
-
 type Service interface {
-	CreateQRCode(userID string, rawURL string) (*model.CreateResponse, error)
-	GetOriginalURL(qrToken string) (string, error)
-	UpdateQRCode(qrToken string, newURL string) error
-	DeleteQRCode(qrToken string) error
+	CreateQRCode(ctx context.Context, userID string, rawURL string) (*model.CreateResponse, error)
+	GetOriginalURL(ctx context.Context, qrToken string) (string, error)
+	UpdateQRCode(ctx context.Context, qrToken string, newURL string) error
+	DeleteQRCode(ctx context.Context, qrToken string) error
 }
 
 type qrCodeService struct {
-	repo     repository.Repository
-	tokenGen token.Generator
-	baseURL  string
+	repo       repository.Repository
+	tokenGen   token.Generator
+	baseURL    string
+	maxRetries int
+	maxURLLen  int
 }
 
-func NewService(repo repository.Repository, tokenGen token.Generator, baseURL string) Service {
+// NewService 接收 maxRetries 和 maxURLLen，不再寫死
+func NewService(repo repository.Repository, tokenGen token.Generator, baseURL string, maxRetries int, maxURLLen int) Service {
 	return &qrCodeService{
-		repo:     repo,
-		tokenGen: tokenGen,
-		baseURL:  baseURL,
+		repo:       repo,
+		tokenGen:   tokenGen,
+		baseURL:    baseURL,
+		maxRetries: maxRetries,
+		maxURLLen:  maxURLLen,
 	}
 }
 
-func (s *qrCodeService) CreateQRCode(userID string, rawURL string) (*model.CreateResponse, error) {
-	if err := validateURL(rawURL); err != nil {
+func (s *qrCodeService) CreateQRCode(ctx context.Context, userID string, rawURL string) (*model.CreateResponse, error) {
+	if err := s.validateURL(rawURL); err != nil {
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
 
 	var qrToken string
-	for i := 0; i < maxRetries; i++ {
-
+	for i := 0; i < s.maxRetries; i++ {
 		candidate, err := s.tokenGen.Generate(rawURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate token: %w", err)
 		}
 
-		log.Printf("retry %d, candidate token: [%s]", i, candidate) // ← 加這行
-
-		exists, err := s.repo.TokenExists(candidate)
+		exists, err := s.repo.TokenExists(ctx, candidate)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check token: %w", err)
 		}
@@ -61,14 +57,12 @@ func (s *qrCodeService) CreateQRCode(userID string, rawURL string) (*model.Creat
 			qrToken = candidate
 			break
 		}
-		// collision，繼續重試
 	}
 
 	if qrToken == "" {
-		return nil, fmt.Errorf("failed to generate unique token after %d retries", maxRetries)
+		return nil, fmt.Errorf("failed to generate unique token after %d retries", s.maxRetries)
 	}
 
-	// 取得token成功後，建立物件
 	qr := &model.QRCode{
 		ID:        qrToken,
 		UserID:    userID,
@@ -77,40 +71,38 @@ func (s *qrCodeService) CreateQRCode(userID string, rawURL string) (*model.Creat
 		CreatedAt: time.Now(),
 	}
 
-	// 儲存
-	if err := s.repo.Create(qr); err != nil {
+	if err := s.repo.Create(ctx, qr); err != nil {
 		return nil, fmt.Errorf("failed to create qr code: %w", err)
 	}
 
-	// 儲存成功，回傳 token
 	return &model.CreateResponse{QRToken: qrToken}, nil
 }
 
-func (s *qrCodeService) GetOriginalURL(qrToken string) (string, error) {
-	qr, err := s.repo.GetByToken(qrToken)
+func (s *qrCodeService) GetOriginalURL(ctx context.Context, qrToken string) (string, error) {
+	qr, err := s.repo.GetByToken(ctx, qrToken)
 	if err != nil {
 		return "", err
 	}
 	return qr.URL, nil
 }
 
-func (s *qrCodeService) UpdateQRCode(qrToken string, newURL string) error {
-	if err := validateURL(newURL); err != nil {
+func (s *qrCodeService) UpdateQRCode(ctx context.Context, qrToken string, newURL string) error {
+	if err := s.validateURL(newURL); err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
 	}
-	return s.repo.Update(qrToken, newURL)
+	return s.repo.Update(ctx, qrToken, newURL)
 }
 
-func (s *qrCodeService) DeleteQRCode(qrToken string) error {
-	return s.repo.Delete(qrToken)
+func (s *qrCodeService) DeleteQRCode(ctx context.Context, qrToken string) error {
+	return s.repo.Delete(ctx, qrToken)
 }
 
-func validateURL(rawURL string) error {
+func (s *qrCodeService) validateURL(rawURL string) error {
 	if len(rawURL) == 0 {
 		return fmt.Errorf("URL cannot be empty")
 	}
-	if len(rawURL) > maxURLLength {
-		return fmt.Errorf("URL exceeds maximum length of %d characters", maxURLLength)
+	if len(rawURL) > s.maxURLLen {
+		return fmt.Errorf("URL exceeds maximum length of %d characters", s.maxURLLen)
 	}
 
 	parsed, err := url.ParseRequestURI(rawURL)

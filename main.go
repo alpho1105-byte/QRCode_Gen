@@ -47,19 +47,45 @@ import (
 func main() {
 	cfg := config.Load()
 
-	db, err := repository.NewSQLiteRepository("qrcode.db")
+	sqliteDB, err := repository.NewSQLiteRepository(
+		cfg.DBPath,
+		cfg.DBMaxOpenConns,
+		cfg.DBMaxIdleConns,
+		cfg.DBConnMaxLifetime,
+	)
 	if err != nil {
 		log.Fatalf("failed to init database: %v", err)
 	}
-	cache, err := repository.NewRedisRepository(cfg.RedisAddr, cfg.RedisTTL)
+
+	db := repository.NewBreakerRepository(
+		sqliteDB,
+		cfg.BreakerMaxRequests,
+		cfg.BreakerInterval,
+		cfg.BreakerTimeout,
+		cfg.BreakerFailThreshold,
+	)
+
+	cache, err := repository.NewRedisRepository(
+		cfg.RedisAddr,
+		cfg.RedisTTL,
+		cfg.RedisPoolSize,
+		cfg.RedisMinIdleConns,
+		cfg.RedisReadTimeout,
+		cfg.RedisWriteTimeout,
+		cfg.RedisDialTimeout,
+	)
 	if err != nil {
 		log.Fatalf("failed to connect to Redis: %v", err)
 	}
-	repo := repository.NewCachedRepository(cache, db)
 
-	tokenGen := token.NewGenerator()
-	svc := service.NewService(repo, tokenGen, cfg.BaseURL)
-	h := handler.NewHandler(svc, cfg.BaseURL)
+	repo := repository.NewCompositeRepository(cache, db)
+
+	tokenGen := token.NewGenerator(cfg.TokenLength)
+
+	svc := service.NewService(repo, tokenGen, cfg.BaseURL, cfg.MaxRetries, cfg.MaxURLLength)
+
+	h := handler.NewHandler(svc, cfg.BaseURL, cfg.DefaultQRDimension, cfg.MaxQRDimension, cfg.CacheMaxAge)
+
 	r := chi.NewRouter()
 	r.Use(middleware.Logging)
 	h.RegisterRoutes(r)
@@ -67,7 +93,6 @@ func main() {
 		fmt.Fprintln(w, "OK")
 	})
 
-	// --- 啟動 ---
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	log.Printf("QR Code Generator starting on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, r))

@@ -26,6 +26,9 @@ type URLResponse struct {
 	URL string `json:"url"`
 }
 
+type ImageResponse struct {
+	ImageLocation string `json:"image_location"`
+}
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message"`

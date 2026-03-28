@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -18,7 +19,7 @@ func NewMemoryRepository() Repository {
 	}
 }
 
-func (r *memoryRepo) Create(qr *model.QRCode) error {
+func (r *memoryRepo) Create(_ context.Context, qr *model.QRCode) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -30,7 +31,7 @@ func (r *memoryRepo) Create(qr *model.QRCode) error {
 	return nil
 }
 
-func (r *memoryRepo) GetByToken(qrToken string) (*model.QRCode, error) {
+func (r *memoryRepo) GetByToken(_ context.Context, qrToken string) (*model.QRCode, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -41,7 +42,7 @@ func (r *memoryRepo) GetByToken(qrToken string) (*model.QRCode, error) {
 	return qr, nil
 }
 
-func (r *memoryRepo) GetByUserID(userID string) ([]*model.QRCode, error) {
+func (r *memoryRepo) GetByUserID(_ context.Context, userID string) ([]*model.QRCode, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -54,7 +55,7 @@ func (r *memoryRepo) GetByUserID(userID string) ([]*model.QRCode, error) {
 	return results, nil
 }
 
-func (r *memoryRepo) Update(qrToken string, url string) error {
+func (r *memoryRepo) Update(_ context.Context, qrToken string, url string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -66,7 +67,7 @@ func (r *memoryRepo) Update(qrToken string, url string) error {
 	return nil
 }
 
-func (r *memoryRepo) Delete(qrToken string) error {
+func (r *memoryRepo) Delete(_ context.Context, qrToken string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -77,7 +78,7 @@ func (r *memoryRepo) Delete(qrToken string) error {
 	return nil
 }
 
-func (r *memoryRepo) TokenExists(qrToken string) (bool, error) {
+func (r *memoryRepo) TokenExists(_ context.Context, qrToken string) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

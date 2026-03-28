@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"qrcode-gen/model"
 
@@ -13,14 +15,12 @@ type sqliteRepo struct {
 	db *sql.DB
 }
 
-func NewSQLiteRepository(dbPath string) (Repository, error) {
+func NewSQLiteRepository(dbPath string, maxOpenConns int, maxIdleConns int, connMaxLifetime time.Duration) (Repository, error) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// 建表：對應設計文件的 QrCodes table
-	// IF NOT EXISTS 讓它可以重複執行不會報錯
 	createTable := `
 	CREATE TABLE IF NOT EXISTS qr_codes (
 		id         TEXT PRIMARY KEY,
@@ -37,11 +37,15 @@ func NewSQLiteRepository(dbPath string) (Repository, error) {
 		return nil, fmt.Errorf("failed to create table: %w", err)
 	}
 
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetMaxIdleConns(maxIdleConns)
+	db.SetConnMaxLifetime(connMaxLifetime)
+
 	return &sqliteRepo{db: db}, nil
 }
 
-func (r *sqliteRepo) Create(qr *model.QRCode) error {
-	_, err := r.db.Exec(
+func (r *sqliteRepo) Create(ctx context.Context, qr *model.QRCode) error {
+	_, err := r.db.ExecContext(ctx,
 		"INSERT INTO qr_codes (id, user_id, qr_token, url, created_at) VALUES (?, ?, ?, ?, ?)",
 		qr.ID, qr.UserID, qr.QRToken, qr.URL, qr.CreatedAt,
 	)
@@ -51,9 +55,9 @@ func (r *sqliteRepo) Create(qr *model.QRCode) error {
 	return nil
 }
 
-func (r *sqliteRepo) GetByToken(qrToken string) (*model.QRCode, error) {
+func (r *sqliteRepo) GetByToken(ctx context.Context, qrToken string) (*model.QRCode, error) {
 	qr := &model.QRCode{}
-	err := r.db.QueryRow(
+	err := r.db.QueryRowContext(ctx,
 		"SELECT id, user_id, qr_token, url, created_at FROM qr_codes WHERE qr_token = ?",
 		qrToken,
 	).Scan(&qr.ID, &qr.UserID, &qr.QRToken, &qr.URL, &qr.CreatedAt)
@@ -67,8 +71,8 @@ func (r *sqliteRepo) GetByToken(qrToken string) (*model.QRCode, error) {
 	return qr, nil
 }
 
-func (r *sqliteRepo) GetByUserID(userID string) ([]*model.QRCode, error) {
-	rows, err := r.db.Query(
+func (r *sqliteRepo) GetByUserID(ctx context.Context, userID string) ([]*model.QRCode, error) {
+	rows, err := r.db.QueryContext(ctx,
 		"SELECT id, user_id, qr_token, url, created_at FROM qr_codes WHERE user_id = ?",
 		userID,
 	)
@@ -88,8 +92,8 @@ func (r *sqliteRepo) GetByUserID(userID string) ([]*model.QRCode, error) {
 	return results, nil
 }
 
-func (r *sqliteRepo) Update(qrToken string, url string) error {
-	result, err := r.db.Exec(
+func (r *sqliteRepo) Update(ctx context.Context, qrToken string, url string) error {
+	result, err := r.db.ExecContext(ctx,
 		"UPDATE qr_codes SET url = ? WHERE qr_token = ?",
 		url, qrToken,
 	)
@@ -97,7 +101,6 @@ func (r *sqliteRepo) Update(qrToken string, url string) error {
 		return fmt.Errorf("update failed: %w", err)
 	}
 
-	// 檢查有沒有真的更新到資料
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		return fmt.Errorf("qr code not found: %s", qrToken)
@@ -105,8 +108,8 @@ func (r *sqliteRepo) Update(qrToken string, url string) error {
 	return nil
 }
 
-func (r *sqliteRepo) Delete(qrToken string) error {
-	result, err := r.db.Exec(
+func (r *sqliteRepo) Delete(ctx context.Context, qrToken string) error {
+	result, err := r.db.ExecContext(ctx,
 		"DELETE FROM qr_codes WHERE qr_token = ?",
 		qrToken,
 	)
@@ -121,9 +124,9 @@ func (r *sqliteRepo) Delete(qrToken string) error {
 	return nil
 }
 
-func (r *sqliteRepo) TokenExists(qrToken string) (bool, error) {
+func (r *sqliteRepo) TokenExists(ctx context.Context, qrToken string) (bool, error) {
 	var count int
-	err := r.db.QueryRow(
+	err := r.db.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM qr_codes WHERE qr_token = ?",
 		qrToken,
 	).Scan(&count)
