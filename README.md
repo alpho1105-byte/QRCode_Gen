@@ -12,17 +12,6 @@ A practice Go project for generating and managing QR codes with redirect support
 - SQLite-backed storage
 
 
-## Build
-
-# 第一段：builder — 用完整的 Go 環境編譯
-FROM golang:1.21-alpine AS builder
-# 產出一個執行檔 qrcode-gen
-
-# 第二段：最終映像 — 只放執行檔，不帶 Go 編譯器
-FROM alpine:latest
-COPY --from=builder /app/qrcode-gen .
-
-
 ## Run
 
 ```bash
