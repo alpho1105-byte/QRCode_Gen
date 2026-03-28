@@ -1,0 +1,16 @@
+qrcode.db
+test/qr_output.png
+.gocache/
+
+# Go build outputs
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Coverage and workspace files
+coverage.out
+.DS_Store
